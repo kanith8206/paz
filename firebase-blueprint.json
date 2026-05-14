@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "avatar": { "type": "string" },
+        "joinedAt": { "type": "number" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "trustedContact": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "phone": { "type": "string" },
+            "email": { "type": "string", "format": "email" }
+          },
+          "required": ["name", "phone"]
+        }
+      },
+      "required": ["id", "name", "email", "joinedAt"]
+    },
+    "MoodEntry": {
+      "title": "MoodEntry",
+      "description": "A single mood log entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "mood": { "type": "string", "enum": ["calm", "happy", "neutral", "stressed", "anxious", "sad", "overwhelmed"] },
+        "note": { "type": "string" },
+        "anxietyLevel": { "type": "number" },
+        "factors": {
+          "type": "object",
+          "properties": {
+            "sleep": { "type": "string", "enum": ["poor", "fair", "good"] },
+            "energy": { "type": "string", "enum": ["low", "medium", "high"] },
+            "water": { "type": "boolean" },
+            "social": { "type": "boolean" }
+          }
+        },
+        "uid": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "mood", "anxietyLevel", "uid"]
+    },
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "A single journal entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "mood": { "type": "string" },
+        "uid": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "title", "content", "uid"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A single chat message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "content": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "uid": { "type": "string" },
+        "detection": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string", "enum": ["low", "medium", "high"] },
+            "score": { "type": "number" },
+            "keywords": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      },
+      "required": ["id", "role", "content", "timestamp", "uid"]
+    },
+    "GAD7Entry": {
+      "title": "GAD7Entry",
+      "description": "A single GAD-7 assessment entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "scores": { "type": "array", "items": { "type": "number" } },
+        "totalScore": { "type": "number" },
+        "level": { "type": "string", "enum": ["mild", "moderate", "severe"] },
+        "uid": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "scores", "totalScore", "level", "uid"]
+    },
+    "VoiceEntry": {
+      "title": "VoiceEntry",
+      "description": "A single voice analysis entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "analysis": {
+          "type": "object",
+          "properties": {
+            "state": { "type": "string", "enum": ["Calm", "Slightly Stressed", "Moderately Stressed", "Highly Stressed"] },
+            "confidence": { "type": "number" },
+            "features": {
+              "type": "object",
+              "properties": {
+                "pitch": { "type": "string" },
+                "speed": { "type": "string" },
+                "energy": { "type": "string" },
+                "pauses": { "type": "string" }
+              }
+            },
+            "explanation": { "type": "string" },
+            "suggestions": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "uid": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "analysis", "uid"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document"
+    },
+    "/users/{userId}/moods/{moodId}": {
+      "schema": "MoodEntry",
+      "description": "Collection of mood entries for a user"
+    },
+    "/users/{userId}/journals/{journalId}": {
+      "schema": "JournalEntry",
+      "description": "Collection of journal entries for a user"
+    },
+    "/users/{userId}/chats/{chatId}": {
+      "schema": "ChatMessage",
+      "description": "Collection of chat messages for a user"
+    },
+    "/users/{userId}/assessments/{assessmentId}": {
+      "schema": "GAD7Entry",
+      "description": "Collection of GAD-7 assessments for a user"
+    },
+    "/users/{userId}/voice_history/{voiceId}": {
+      "schema": "VoiceEntry",
+      "description": "Collection of voice analysis entries for a user"
+    }
+  }
+}

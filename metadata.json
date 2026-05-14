@@ -1,0 +1,5 @@
+{
+  "name": "Paz",
+  "description": "A calm, AI-powered assistant for anxiety management, mood tracking, and breathing exercises.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"]
+}

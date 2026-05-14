@@ -1,0 +1,268 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - id: string (required) - The user's UID
+    //   - name: string (required, 1-100 chars) - Display name
+    //   - email: string (required, email format) - User's email
+    //   - avatar: string (optional, URL) - Profile picture URL
+    //   - joinedAt: number (required) - Timestamp of joining
+    //   - role: string (optional, enum: ['user', 'admin']) - User role
+    //   - trustedContact: map (optional) - Trusted contact info {name, phone, email}
+    //   - lastCheckIn: number (optional) - Last check-in timestamp
+    //
+    // Subcollection: users/{userId}/moods
+    // Document ID: {moodId}
+    // Fields:
+    //   - id: string (required) - Entry ID
+    //   - timestamp: number (required) - Log timestamp
+    //   - mood: string (required, enum: ['calm', 'happy', 'neutral', 'stressed', 'anxious', 'sad', 'overwhelmed'])
+    //   - note: string (optional, 0-1000 chars) - Optional note
+    //   - anxietyLevel: number (required, 0-10) - Anxiety level
+    //   - factors: map (optional) - {sleep, energy, water, social}
+    //   - uid: string (required) - The user's UID
+    //
+    // Subcollection: users/{userId}/journals
+    // Document ID: {journalId}
+    // Fields:
+    //   - id: string (required) - Entry ID
+    //   - timestamp: number (required) - Log timestamp
+    //   - title: string (required, 1-200 chars) - Journal title
+    //   - content: string (required, 1-10000 chars) - Journal content
+    //   - mood: string (optional) - Associated mood
+    //   - uid: string (required) - The user's UID
+    //
+    // Subcollection: users/{userId}/chats
+    // Document ID: {chatId}
+    // Fields:
+    //   - id: string (required) - Message ID
+    //   - role: string (required, enum: ['user', 'assistant']) - Message sender role
+    //   - content: string (required, 1-5000 chars) - Message content
+    //   - timestamp: number (required) - Message timestamp
+    //   - uid: string (required) - The user's UID
+    //   - detection: map (optional) - {level, score, keywords}
+    //
+    // Subcollection: users/{userId}/sessions
+    // Document ID: {sessionId}
+    // Fields:
+    //   - id: string (required) - Session ID
+    //   - timestamp: number (required) - Session timestamp
+    //   - duration: number (required) - Duration in seconds
+    //   - cycles: number (required) - Number of breathing cycles
+    //   - uid: string (required) - The user's UID
+    //
+    // Subcollection: users/{userId}/assessments
+    // Document ID: {assessmentId}
+    // Fields:
+    //   - id: string (required) - Assessment ID
+    //   - timestamp: number (required) - Assessment timestamp
+    //   - scores: list (required) - List of 7 scores
+    //   - totalScore: number (required) - Total GAD-7 score
+    //   - level: string (required, enum: ['mild', 'moderate', 'severe'])
+    //   - uid: string (required) - The user's UID
+    //
+    // Subcollection: users/{userId}/voice_history
+    // Document ID: {voiceId}
+    // Fields:
+    //   - id: string (required) - Entry ID
+    //   - timestamp: number (required) - Entry timestamp
+    //   - analysis: map (required) - {state, confidence, features, explanation, suggestions}
+    //   - uid: string (required) - The user's UID
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "kishoreofficial0707@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string &&
+        (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['id', 'name', 'email', 'avatar', 'joinedAt', 'role', 'trustedContact', 'lastCheckIn']) &&
+        data.id is string && data.id == request.auth.uid &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+        isValidEmail(data.email) &&
+        (!('avatar' in data) || isValidUrl(data.avatar)) &&
+        data.joinedAt is number &&
+        (!('trustedContact' in data) || (
+          data.trustedContact is map &&
+          data.trustedContact.keys().hasOnly(['name', 'phone', 'email']) &&
+          data.trustedContact.name is string && data.trustedContact.name.size() > 0 &&
+          data.trustedContact.phone is string && data.trustedContact.phone.size() > 0
+        ));
+    }
+
+    function isValidMoodEntry(data) {
+      return hasOnlyAllowedFields(['id', 'timestamp', 'mood', 'note', 'anxietyLevel', 'factors', 'uid']) &&
+        data.id is string &&
+        data.timestamp is number &&
+        data.mood in ['calm', 'happy', 'neutral', 'stressed', 'anxious', 'sad', 'overwhelmed'] &&
+        (!('note' in data) || (data.note is string && data.note.size() <= 1000)) &&
+        data.anxietyLevel is number && data.anxietyLevel >= 0 && data.anxietyLevel <= 10 &&
+        (!('factors' in data) || (
+          data.factors is map &&
+          data.factors.keys().hasOnly(['sleep', 'energy', 'water', 'social']) &&
+          data.factors.sleep in ['poor', 'fair', 'good'] &&
+          data.factors.energy in ['low', 'medium', 'high'] &&
+          data.factors.water is bool &&
+          data.factors.social is bool
+        )) &&
+        data.uid is string && data.uid == request.auth.uid;
+    }
+
+    function isValidJournalEntry(data) {
+      return hasOnlyAllowedFields(['id', 'timestamp', 'title', 'content', 'mood', 'uid']) &&
+        data.id is string &&
+        data.timestamp is number &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+        data.content is string && data.content.size() > 0 && data.content.size() <= 10000 &&
+        (!('mood' in data) || data.mood is string) &&
+        data.uid is string && data.uid == request.auth.uid;
+    }
+
+    function isValidChatMessage(data) {
+      return hasOnlyAllowedFields(['id', 'role', 'content', 'timestamp', 'uid', 'detection']) &&
+        data.id is string &&
+        data.role in ['user', 'assistant'] &&
+        data.content is string && data.content.size() > 0 && data.content.size() <= 5000 &&
+        data.timestamp is number &&
+        data.uid is string && data.uid == request.auth.uid &&
+        (!('detection' in data) || (
+          data.detection is map &&
+          data.detection.keys().hasOnly(['level', 'score', 'keywords']) &&
+          data.detection.level in ['low', 'medium', 'high'] &&
+          data.detection.score is number &&
+          data.detection.keywords is list
+        ));
+    }
+
+    function isValidBreathingSession(data) {
+      return hasOnlyAllowedFields(['id', 'timestamp', 'duration', 'cycles', 'uid']) &&
+        data.id is string &&
+        data.timestamp is number &&
+        data.duration is number && data.duration >= 0 &&
+        data.cycles is number && data.cycles >= 0 &&
+        data.uid is string && data.uid == request.auth.uid;
+    }
+
+    function isValidGAD7Entry(data) {
+      return hasOnlyAllowedFields(['id', 'timestamp', 'scores', 'totalScore', 'level', 'uid']) &&
+        data.id is string &&
+        data.timestamp is number &&
+        data.scores is list && data.scores.size() == 7 &&
+        data.totalScore is number && data.totalScore >= 0 && data.totalScore <= 21 &&
+        data.level in ['mild', 'moderate', 'severe'] &&
+        data.uid is string && data.uid == request.auth.uid;
+    }
+
+    function isValidVoiceEntry(data) {
+      return hasOnlyAllowedFields(['id', 'timestamp', 'analysis', 'uid']) &&
+        data.id is string &&
+        data.timestamp is number &&
+        data.analysis is map &&
+        data.analysis.keys().hasAll(['state', 'confidence', 'features', 'explanation', 'suggestions']) &&
+        data.analysis.state in ['Calm', 'Slightly Stressed', 'Moderately Stressed', 'Highly Stressed'] &&
+        data.analysis.confidence is number &&
+        data.analysis.features is map &&
+        data.analysis.suggestions is list &&
+        data.uid is string && data.uid == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (request.resource.data.role == 'user' || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) && request.resource.data.role == resource.data.role || isAdmin());
+
+      match /moods/{moodId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidMoodEntry(request.resource.data);
+        allow update: if isOwner(userId) && isValidMoodEntry(request.resource.data) && areImmutableFieldsUnchanged(['id', 'uid', 'timestamp']);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /journals/{journalId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidJournalEntry(request.resource.data);
+        allow update: if isOwner(userId) && isValidJournalEntry(request.resource.data) && areImmutableFieldsUnchanged(['id', 'uid', 'timestamp']);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /chats/{chatId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidChatMessage(request.resource.data);
+        allow update: if isOwner(userId) && isValidChatMessage(request.resource.data) && areImmutableFieldsUnchanged(['id', 'uid', 'timestamp']);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /sessions/{sessionId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidBreathingSession(request.resource.data);
+        allow update: if isOwner(userId) && isValidBreathingSession(request.resource.data) && areImmutableFieldsUnchanged(['id', 'uid', 'timestamp']);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /assessments/{assessmentId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidGAD7Entry(request.resource.data);
+        allow update: if isOwner(userId) && isValidGAD7Entry(request.resource.data) && areImmutableFieldsUnchanged(['id', 'uid', 'timestamp']);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /voice_history/{voiceId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidVoiceEntry(request.resource.data);
+        allow update: if isOwner(userId) && isValidVoiceEntry(request.resource.data) && areImmutableFieldsUnchanged(['id', 'uid', 'timestamp']);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
